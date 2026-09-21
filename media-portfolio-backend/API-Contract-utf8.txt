@@ -1,0 +1,429 @@
+﻿API CONTRACT
+Media Production Portfolio Platform
+Single source of truth between media-portfolio-backend and media-portfolio-frontend
+Version 1.0 · Baseline for Development · August 2026
+This document, together with Requirements-and-Architecture-v1.0.docx, is the binding source of truth for both repositories. Each repo's .agents/rules/api-contract-mapping.md requires implementation/consumption to match this document exactly.
+
+Table of Contents
+
+
+
+1. Global Rules
+1.1 Base URLs
+Environment
+Base URL
+Local
+`http://localhost:5000/api/v1`
+Staging
+`https://api-staging.<domain-pending>/api/v1`
+Production
+`https://api.<domain-pending>/api/v1`
+The production domain is pending client handover (see Requirements §9.2) — update this table the moment it's known; do not let either repo hard-code a placeholder past that point.
+1.2 Headers
+Header
+Required on
+Notes
+`Authorization: Bearer <token>`
+All admin-only endpoints
+JWT access token from /auth/login or /auth/refresh.
+`Accept-Language`
+All endpoints
+`ar` or `en`. Determines bilingual field selection and WhatsApp template language server-side.
+`Content-Type: application/json`
+All non-file requests
+Standard JSON body.
+1.3 Authentication
+JWT bearer tokens. Access token lifetime: 1 hour. Refresh token lifetime: 30 days. Public endpoints (marked “Public” below) require no Authorization header. All others require a valid, unexpired admin access token or return 401.
+1.4 Response Envelope
+Every response, success or failure, uses one of these two shapes. No endpoint returns a bare array or bare object.
+// Success
+{
+  "isSuccess": true,
+  "timestamp": "2026-08-14T10:00:00Z",
+  "data": { ... } | [ ... ],
+  "meta": { "page": 1, "pageSize": 20, "totalCount": 47 } // present only on paginated list endpoints
+}
+
+// Failure
+{
+  "isSuccess": false,
+  "timestamp": "2026-08-14T10:00:00Z",
+  "data": null,
+  "errors": [
+    { "code": "FIELD_VALIDATION_FAILED", "field": "phone", "message": "Phone number is required." }
+  ]
+}
+1.5 Standard HTTP Status Codes
+Code
+Meaning
+200
+Success (GET, PUT, PATCH, or an action endpoint like a tracking POST)
+201
+Resource created (POST that creates a new entity)
+204
+Success, no body (DELETE)
+400
+Validation failure — see error code registry, §1.6
+401
+Missing/invalid/expired auth token
+403
+Authenticated but not permitted (reserved for future multi-admin use)
+404
+Resource not found
+429
+Rate limited (login, contact-submissions, tracking endpoints)
+500
+Unhandled server error — body never includes a stack trace
+1.6 Error Code Registry
+This is the complete, fixed set of error codes for v1. Neither repo introduces a new code without updating this table first.
+Code
+HTTP Status
+Meaning
+`FIELD_VALIDATION_FAILED`
+400
+One or more request fields failed validation; see the `field` on each error entry.
+`INVALID_CREDENTIALS`
+401
+Login email/password did not match.
+`TOKEN_EXPIRED`
+401
+Access or refresh token has expired.
+`TOKEN_INVALID`
+401
+Malformed or unverifiable token.
+`RESET_TOKEN_INVALID`
+400
+Password reset token invalid or expired.
+`RESOURCE_NOT_FOUND`
+404
+The requested Category/Video/Service/Submission ID does not exist.
+`DUPLICATE_CATEGORY_NAME`
+400
+A category with this name (in either language) already exists.
+`MEDIA_UPLOAD_FAILED`
+400
+Cloudflare Stream/Images reported an upload failure.
+`RATE_LIMITED`
+429
+Too many requests in the current window.
+`INTERNAL_SERVER_ERROR`
+500
+Unexpected server error.
+1.7 Enums
+Enum
+Values
+Serialized as
+VideoStatus
+Draft, Published
+String, e.g. `"Published"`
+ContactSubmissionStatus
+Unread, Read
+String
+Locale
+ar, en
+String (used in Accept-Language, not a body field)
+1.8 Pagination
+List endpoints accept `?page=1&pageSize=20` (defaults shown) and return `meta.page`, `meta.pageSize`, `meta.totalCount` per §1.4.
+2. Media Upload Flow (Cloudflare Stream & Images)
+Raw video/image bytes never pass through this API. The dashboard uploads directly to Cloudflare; this API only brokers the upload URL and records the result. Both steps below are Admin-only.
+POST  /admin/media/video-upload-url
+Requests a one-time direct-upload URL from Cloudflare Stream.
+Response `data`:
+Field
+Type
+Notes
+uploadUrl
+string
+Direct-upload URL; the dashboard PUTs the video file bytes here, not to this API.
+cloudflareStreamId
+string
+Save this client-side — it's submitted with the Create Video request (§4.2) once the upload completes.
+POST  /admin/media/image-upload-url
+Same pattern, for a thumbnail or logo image via Cloudflare Images.
+Field
+Type
+Notes
+uploadUrl
+string
+Direct-upload URL for the image bytes.
+cloudflareImageId
+string
+Save client-side; submitted with the Create/Update Video or Update Site Settings request.
+3. Auth
+POST  /auth/login
+Public. Body:
+Field
+Type
+Notes
+email
+string
+Admin email
+password
+string
+
+Response `data`:
+Field
+Type
+Notes
+accessToken
+string
+1h lifetime
+refreshToken
+string
+30d lifetime
+POST  /auth/refresh
+Public. Body: `{ "refreshToken": string }`. Response: new `accessToken` + `refreshToken` pair.
+POST  /auth/logout
+Admin-only. Invalidates the current refresh token.
+POST  /auth/forgot-password
+Public. Body: `{ "email": string }`. Always returns 200 regardless of whether the email matches, to avoid account enumeration. Sends a reset link by email if it does.
+POST  /auth/reset-password
+Public. Body: `{ "token": string, "newPassword": string }`. Errors with `RESET_TOKEN_INVALID` if expired/unknown.
+POST  /auth/change-password
+Admin-only. Body: `{ "currentPassword": string, "newPassword": string }`.
+4. Catalog — Categories & Videos
+4.1 Categories
+GET  /categories
+Public. Returns all categories, bilingual fields resolved per Accept-Language is NOT applied here — both languages are returned so the frontend can render either without a re-fetch on locale switch.
+Field
+Type
+Notes
+id
+guid
+
+nameEn
+string
+
+nameAr
+string
+
+videoCount
+int
+Count of Published videos in this category
+POST  /admin/categories
+Admin-only. Body: `{ "nameEn": string, "nameAr": string }`. 201 on success. `DUPLICATE_CATEGORY_NAME` if either name already exists.
+PUT  /admin/categories/{id}
+Admin-only. Same body as create.
+DELETE  /admin/categories/{id}
+Admin-only. Removes the category and its video associations only — does not delete the videos themselves (Requirements §6.1). 204 on success.
+4.2 Videos — Admin
+POST  /admin/videos
+Admin-only. Creates a video after the media-upload steps in §2 have completed.
+Field
+Type
+Notes
+titleAr
+string
+Admin-only, used for search matching only
+descriptionAr
+string
+Admin-only, used for search matching only
+categoryIds
+guid[]
+One or more — many-to-many
+cloudflareStreamId
+string
+From §2's video-upload-url step
+cloudflareThumbnailImageId
+string, nullable
+Omit/null to use Stream's auto-generated thumbnail
+status
+VideoStatus
+`Draft` or `Published`
+PUT  /admin/videos/{id}
+Admin-only. Same body shape as create; partial updates not supported in v1 (send the full object).
+PATCH  /admin/videos/{id}/status
+Admin-only. Body: `{ "status": VideoStatus }`. Dedicated endpoint for the publish/unpublish toggle so the dashboard doesn't need to resend the whole video object for this common action.
+DELETE  /admin/videos/{id}
+Admin-only. Soft delete. 204 on success.
+GET  /admin/videos
+Admin-only, paginated. Includes Draft and Published, and every admin-only field (title, description, all three analytics counters).
+Field
+Type
+Notes
+id
+guid
+
+titleAr
+string
+
+descriptionAr
+string
+
+categories
+Category[]
+Bilingual, full objects
+status
+VideoStatus
+
+thumbnailUrl
+string
+Resolved Cloudflare Images delivery URL
+viewCount
+int
+
+whatsAppClickCount
+int
+
+formSubmissionCount
+int
+
+4.3 Videos — Public
+GET  /videos
+Public, paginated. Query: `?categoryId=<guid>`. Published only. Response omits titleAr/descriptionAr entirely — not just blanked, not present in the JSON at all.
+Field
+Type
+Notes
+id
+guid
+
+thumbnailUrl
+string
+
+categories
+Category[]
+Bilingual
+cloudflareStreamId
+string
+For the player embed
+GET  /videos/search
+Public, paginated. Query: `?q=<term>`. Server-side matches `q` against titleAr and descriptionAr (case-insensitive, partial match). Response shape identical to §4.3's GET /videos — the matched fields are never echoed back.
+GET  /videos/{id}
+Public. Published only (404 if Draft or not found — same error code either way, to avoid leaking draft existence). Same response shape as the list, single object.
+POST  /videos/{id}/track-view
+Public. No body. Increments viewCount. 200, empty data. Rate-limited per §1.5.
+POST  /videos/{id}/track-whatsapp-click
+Public. No body. Increments whatsAppClickCount. 200, empty data. Rate-limited.
+5. Secondary Services
+GET  /secondary-services
+Public. Ordered by `displayOrder`.
+Field
+Type
+Notes
+id
+guid
+
+titleEn
+string
+
+titleAr
+string
+
+descriptionEn
+string
+
+descriptionAr
+string
+
+POST  /admin/secondary-services
+Admin-only. Body: titleEn, titleAr, descriptionEn, descriptionAr, displayOrder.
+PUT  /admin/secondary-services/{id}
+Admin-only. Same body as create.
+DELETE  /admin/secondary-services/{id}
+Admin-only. Hard delete (no video/analytics dependency, unlike categories). 204.
+6. Contact Submissions
+POST  /contact-submissions
+Public. Protected by Cloudflare Turnstile token (validated server-side).
+Field
+Type
+Notes
+name
+string
+Required
+phone
+string
+Required
+email
+string
+Required, valid email format
+message
+string
+Required
+originCategoryId
+guid, nullable
+Present if arrived from a video/category page
+originVideoId
+guid, nullable
+Present if arrived from a specific video's page — increments that video's formSubmissionCount
+turnstileToken
+string
+Required, validated server-side against Cloudflare
+If both origin fields are null, the submission is recorded as a general inquiry.
+GET  /admin/contact-submissions
+Admin-only, paginated. Query: `?status=Unread|Read`.
+Field
+Type
+Notes
+id
+guid
+
+name
+string
+
+phone
+string
+
+email
+string
+
+message
+string
+
+originCategory
+Category, nullable
+
+originVideo
+object, nullable
+{ id, thumbnailUrl }
+status
+ContactSubmissionStatus
+
+createdAt
+datetime
+
+readAt
+datetime, nullable
+
+PATCH  /admin/contact-submissions/{id}/mark-read
+Admin-only. Sets status to Read and readAt to now. Starts the 30-day retention countdown (see Requirements §4.5).
+DELETE  /admin/contact-submissions/{id}
+Admin-only. Manual delete, any age/status. 204.
+Automatic deletion of Read submissions older than 30 days is a backend background job — not an API endpoint; no frontend action triggers it.
+7. Site Settings
+GET  /site-settings
+Public. Returns the resolved WhatsApp template text (placeholders substituted) is NOT done here — this endpoint returns the raw template strings and the number; placeholder substitution happens client-side using the specific video's category/link (see §4.4's client-composed message, Requirements §4.4).
+Field
+Type
+Notes
+logoUrl
+string
+
+snapchatUrl
+string, nullable
+
+tiktokUrl
+string, nullable
+
+instagramUrl
+string, nullable
+
+whatsAppNumber
+string
+E.164 format
+whatsAppTemplateAr
+string
+Contains `{category}` and `{videoLink}` placeholders
+whatsAppTemplateEn
+string
+Same placeholders
+PUT  /admin/site-settings
+Admin-only. Same fields as above, all updatable. Logo update uses a cloudflareImageId obtained via §2's image-upload-url step.
+8. Analytics
+GET  /admin/analytics/videos
+Admin-only, paginated. Returns the same counters already present on `GET /admin/videos` (§4.2) — this endpoint exists as a dedicated, sortable view (`?sortBy=viewCount|whatsAppClickCount|formSubmissionCount`) for the dashboard's analytics screen, rather than a different data shape.
+9. Health
+GET  /health
+Public, unversioned (`/health`, not `/api/v1/health`). Returns 200 with `{ "status": "ok" }` if the database is reachable.
+10. Versioning Policy
+All routes are prefixed `/api/v1`. A breaking change to any existing route's request/response shape, status code, or error code requires a `/api/v2` route rather than modifying `/v1` in place, once the frontend repo is building against it. Additive, backward-compatible changes (new optional field, new endpoint) may be made within v1 but must update this document's version number and be communicated to the other repo's developer before being relied upon.
+

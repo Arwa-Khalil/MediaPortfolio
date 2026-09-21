@@ -1,0 +1,8 @@
+**/*/bin/
+**/*/obj/
+.dockerignore
+docker-compose.yml
+.env
+.agents/
+tests/
+.git/

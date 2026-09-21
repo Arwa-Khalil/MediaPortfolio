@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MediaPortfolio.API/MediaPortfolio.API.csproj" />
+    <Project Path="src/MediaPortfolio.Application/MediaPortfolio.Application.csproj" />
+    <Project Path="src/MediaPortfolio.Domain/MediaPortfolio.Domain.csproj" />
+    <Project Path="src/MediaPortfolio.Infrastructure/MediaPortfolio.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MediaPortfolio.API.IntegrationTests/MediaPortfolio.API.IntegrationTests.csproj" />
+    <Project Path="tests/MediaPortfolio.Application.UnitTests/MediaPortfolio.Application.UnitTests.csproj" />
+    <Project Path="tests/MediaPortfolio.Domain.UnitTests/MediaPortfolio.Domain.UnitTests.csproj" />
+    <Project Path="tests/MediaPortfolio.Infrastructure.UnitTests/MediaPortfolio.Infrastructure.UnitTests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,204 @@
+﻿MEDIA PRODUCTION PORTFOLIO PLATFORM
+(working name — client's site, not a product brand)
+Bilingual (Arabic/English) Portfolio Website & Admin Dashboard
+Product Requirements & Technical Architecture Document
+Version 1.0 · Baseline for Development · August 2026
+Two-repository delivery: media-portfolio-backend and media-portfolio-frontend, each with its own .agents/rules folder.
+
+Table of Contents
+
+
+
+1. Executive Summary
+The client is an established media production company whose core service is video production and montage/editing for businesses across a range of industries — medical, factories, restaurants, cafes, retail shops, beauty and cosmetics, and real estate, among others the admin may add over time. Alongside this, the client offers secondary, ongoing follow-up services (e.g. social media publishing/page management, website building) that clients typically need after their video is delivered.
+This document specifies a bilingual (Arabic/English) marketing and portfolio website built to convert visitors into leads: visitors browse the client's past work by industry category or search, watch videos, and are guided toward contacting the client via WhatsApp or a contact form — both of which carry forward exactly which video and category the visitor was looking at, so the client knows what convinced a given lead to reach out.
+The site is backed by a single-admin dashboard giving the client full control over content — categories, videos, secondary services, branding, and social links — without needing a developer for day-to-day updates.
+Performance requirement: WordPress is explicitly out of scope for this project on performance grounds. The stack is a decoupled Next.js frontend and a dedicated backend API (see §6-7), with video delivery offloaded entirely to a purpose-built video CDN rather than self-hosted files.
+2. Actors & Roles
+Role
+Account Required
+Summary
+Public Visitor
+No
+Browses categories, searches videos, watches videos (no autoplay), contacts the client via WhatsApp or the contact form.
+Admin
+Yes (single account)
+Manages categories, videos (upload/publish/delete), secondary services, site settings (logo, social links, WhatsApp templates), and views the contact-submission inbox and analytics.
+There is exactly one Admin account for v1. See §9.2 for the note on this as a confirmed (not merely default) decision.
+3. Core Domain Concepts
+3.1 Category
+An admin-managed classification (e.g. طبي — Medical, مصانع — Factories, مطاعم — Restaurants, كافيهات — Cafes, محلات تجارية — Retail Shops, العناية والمنتجات التجميلية — Beauty & Cosmetics, العقارات — Real Estate). Admin can add, edit, or delete categories at any time. Bilingual (name stored in both Arabic and English).
+3.2 Video
+A single uploaded work sample. Has a private Title and a private Description/meta field — both admin-only, used only to power search matching, and never rendered anywhere on the public site. Has a thumbnail (manually uploaded by admin, or auto-generated from the video if skipped). Belongs to one or more Categories (many-to-many). Has a Draft/Published status — only Published videos are visible publicly. Tracks three counters: view count, WhatsApp-click count, and contact-form-submission count.
+3.3 Secondary Service
+A follow-up service the client offers alongside video production (e.g. social media publishing, website building). Admin-managed list — services can be added or removed as the client's offering changes over time. Bilingual.
+3.4 Contact Submission
+A lead captured via the public contact form: name, phone (required), email (required), message, and an origin reference — the specific Category and Video the visitor came from, or an explicit “general inquiry” marker if they reached the form without that context. Read submissions are automatically deleted 30 days after being marked read; the admin can also delete any submission manually at any time, regardless of age or read status.
+3.5 Site Settings
+A single settings record: logo image, social links (Snapchat, TikTok, Instagram, WhatsApp business number), and the WhatsApp lead-capture message templates (one Arabic, one English — both admin-editable). Changing any of these updates every place it's used sitewide immediately.
+4. Functional Requirements
+4.1 Category Management
+Admin can create, edit (both language names), and delete categories.
+Deleting a category removes it from any videos it was assigned to; it does not delete those videos (see the Architecture document's non-cascade rule).
+Seven initial categories are provided by the client at launch (§3.1); more can be added at any time.
+4.2 Video Management & Upload Flow
+Admin uploads a video file, optionally a thumbnail image, and enters a private Title and a private Description/meta field.
+If no thumbnail is uploaded, one is auto-generated from the video.
+Admin assigns the video to one or more Categories.
+Admin sets the video's status to Draft (not visible publicly) or Published (visible).
+Title and Description are never shown to public visitors under any circumstance in v1 — they exist solely to power search matching (§4.3). This may be revisited by the frontend developer later as a distinct, separately-scoped decision — it is not implicitly enabled by this document.
+4.3 Public Browse & Search
+Visitors browse Published videos by Category.
+Visitors can search; search matches against each video's private Title and Description fields server-side, but the matched fields themselves are still never displayed in the results — only the video's thumbnail and its category context are shown.
+Clicking a video result opens the video play page.
+4.4 Video Play Page & Lead Capture
+The video plays on click; there is no autoplay anywhere on the site.
+A WhatsApp button is present on the page. Clicking it opens WhatsApp (the client's single sitewide business number) with a pre-filled message built from an admin-editable template, substituting the video's category and a link back to the video — so the client can see exactly what the visitor was looking at when they reached out.
+A second button links to the public contact form, carrying the same category/video context forward as a pre-filled (hidden) origin field.
+Both the WhatsApp click and the video view increment that video's respective analytics counters.
+4.5 Contact Form & Retention
+Fields: name, phone (required), email (required), message, and an origin field — auto-filled with the category/video the visitor arrived from, or marked as a general inquiry if the visitor reached the form directly (e.g. from the main navigation, not from a video page).
+Submitting the form increments the origin video's form-submission counter, if an origin video is present.
+Admin sees all submissions in the dashboard inbox and can mark them read.
+Submissions marked read are automatically deleted 30 days after being marked read, to prevent unbounded database growth.
+Admin can manually delete any submission at any time, independent of the automatic rule.
+Basic spam protection (e.g. Cloudflare Turnstile) protects the form.
+4.6 Bilingual Site & Language Detection
+The site's source/default language is Arabic.
+On first visit, the site auto-selects Arabic if the visitor's browser language is Arabic, and English for any other detected language.
+A manual toggle in the header lets the visitor override the detected language at any time; the choice persists for return visits.
+All Arabic-facing layout renders correctly right-to-left.
+4.7 Site Settings
+Admin can update the site logo at any time; it updates everywhere it's used.
+Admin can update social links: Snapchat, TikTok, Instagram, and the WhatsApp business number — these are the only four platforms in scope.
+Admin can edit the WhatsApp lead-capture message template, separately for Arabic and English, from the dashboard.
+4.8 Admin Authentication
+Single admin account, secured login.
+Forgot-password flow (email-based reset).
+Change-password flow, available while logged in.
+4.9 Analytics Dashboard
+Per-video view count, WhatsApp-click count, and contact-form-submission count, visible to the admin in the video list/detail view.
+5. Non-Functional Requirements
+Performance is a critical, explicitly stated requirement — this is the reason WordPress was ruled out in favor of a decoupled Next.js frontend, a dedicated backend API, and offloading all video/image delivery to CDN-backed media services (see §7).
+SEO-friendly: server-rendered/statically-generated public pages, per-page metadata, sitemap, structured data for video content.
+Fully responsive across mobile, tablet, and desktop.
+Bilingual UI: Arabic (default, RTL) and English (LTR), auto-detected with manual override (§4.6).
+Security baseline: hashed admin password, JWT-based authentication, rate limiting on the login and contact-form endpoints, input validation on every write.
+Scale target: a single-client marketing/portfolio site — low hundreds of videos, modest traffic. Architecture should not over-build for a scale this project doesn't need (see the Architecture rules' note against adding infrastructure the project doesn't use).
+6. Proposed Architecture & Repository Strategy
+6.1 Repository Strategy: Two Repositories
+Decision: media-portfolio-backend and media-portfolio-frontend are two separate repositories, matching the two-developer team (one dev per repo).
+Contract discipline this requires: With two repos, the API Contract document is the only thing keeping backend and frontend in sync. Both repos' .agents/rules folders point back to the same contract document as the single source of truth; any contract change must be versioned and communicated deliberately, not assumed to propagate automatically.
+6.2 Backend: Clean Architecture, Modular Monolith
+ASP.NET Core, organized as Clean Architecture (Domain / Application / Infrastructure / API layers, dependencies pointing inward only) with internal modules for Identity, Catalog (Categories + Videos), Services, Contact, Settings, and Analytics. CQRS via MediatR — every use case is a Command or a Query with its own handler. Full detail in the backend repo's .agents/rules/architecture.md and cqrs-mediatr-patterns.md.
+6.3 Frontend: Next.js
+Next.js App Router, server-rendered/statically-generated public pages (SSG/ISR) for SEO and speed, with a client-rendered protected admin dashboard section. Bilingual routing via next-intl. Full detail in the frontend repo's .agents/rules/architecture.md and i18n-rtl.md.
+6.4 Media Handling Boundary
+Raw video and image files never pass through the backend API or its database. The admin dashboard uploads directly to Cloudflare Stream (video) and Cloudflare Images (thumbnails/logo); the backend only stores the returned asset references. This keeps the API lightweight and lets video delivery use a purpose-built, globally-distributed, adaptive-bitrate CDN instead of custom-built streaming infrastructure.
+7. Technology Stack & Hosting
+Concern
+Choice
+Cost / Tier
+Backend framework
+ASP.NET Core (.NET 10)
+Free, open-source
+Frontend framework
+Next.js (App Router, TypeScript)
+Free, open-source
+Database
+PostgreSQL (Azure Database for PostgreSQL)
+~$12–25/mo, Burstable tier
+ORM
+Entity Framework Core (Npgsql)
+Free
+Backend hosting
+Azure App Service
+Free (F1) in dev → ~$13/mo+ (B1) in production
+Frontend hosting
+Vercel
+Free tier to start → $20/mo (Pro) if needed
+Video hosting/streaming
+Cloudflare Stream
+Usage-based: ~$5/1,000 min stored + ~$1/1,000 min delivered per month
+Image hosting
+Cloudflare Images
+~$5/mo base (up to 100k images) + delivery
+DNS / CDN / security
+Cloudflare (base free plan)
+Free
+Spam protection
+Cloudflare Turnstile
+Free
+Background jobs
+Hangfire (in-process, same Postgres DB)
+Free (open-source core)
+Error tracking
+Sentry
+Free tier sufficient at this scale
+Domain registration
+Already purchased by client
+N/A — domain details pending
+Containerization
+Docker Compose (local dev + staging)
+Free
+Rough running cost once live: roughly $30–55/month, scaling gently with video catalog size and traffic.
+8. Domain Data Model Overview
+Summary only — the API Contract document (per-endpoint request/response shapes) and the backend repo's database-and-ef-core.md rule file are the authoritative field-level source, to avoid two documents drifting out of sync.
+Category — Id, NameEn, NameAr
+Video — Id, TitleAr (private), DescriptionAr (private), CloudflareStreamId, CloudflareThumbnailImageId (nullable), Status, ViewCount, WhatsAppClickCount, FormSubmissionCount
+VideoCategory — join table (many-to-many)
+SecondaryService — Id, TitleEn, TitleAr, DescriptionEn, DescriptionAr, DisplayOrder
+ContactSubmission — Id, Name, Phone, Email, Message, OriginCategoryId (nullable), OriginVideoId (nullable), Status, CreatedAt, ReadAt
+SiteSettings — single row: LogoImageId, SnapchatUrl, TiktokUrl, InstagramUrl, WhatsAppNumber, WhatsAppTemplateAr, WhatsAppTemplateEn
+AdminUser — Id, Email, PasswordHash, password-reset token fields
+9. Confirmed Decisions & Remaining Open Items
+9.1 Confirmed
+Item
+Decision
+Backend language
+ASP.NET Core (.NET), chosen over Node given the assigned developer's stronger experience in .NET; evaluated as performance-neutral for this workload.
+Repository strategy
+Two repositories — media-portfolio-backend and media-portfolio-frontend.
+Video-category relationship
+Many-to-many — a video can belong to multiple categories.
+Thumbnails
+Manual admin upload, with automatic generation from the video as a fallback if skipped.
+Language detection
+Auto-detect (Arabic if browser is Arabic, English otherwise), with a manual override toggle.
+Search matching
+Matches video Title + Description fields; both remain hidden from the public UI regardless of match.
+WhatsApp number
+Single sitewide number, set via Site Settings.
+WhatsApp templates
+Admin-editable per language (Arabic and English), placeholder-based (category, video link).
+Contact form fields
+Name, phone (required), email (required), message, origin category/video.
+Contact retention
+Read submissions auto-deleted 30 days after being marked read; manual delete always available.
+Admin auth
+Login, forgot-password, and change-password flows all in scope.
+Analytics
+Per-video view / WhatsApp-click / form-submission counters, shown in the dashboard.
+Domain
+Already purchased by the client; specific domain to be provided post-development.
+Timeline
+One-month client deadline; three-week internal target.
+9.2 Still open — confirm before the relevant build phase
+English translations for the client-provided Arabic category names — needed before Phase 1 seeding; either client-provided or drafted for client approval.
+Whether the admin dashboard UI itself should be bilingual or Arabic-only (the public site's bilingual requirement is confirmed regardless).
+Exact domain name and any existing brand style guide beyond the logo file, once the client provides them.
+Whether video Title/Description should ever surface publicly — explicitly deferred to the frontend developer's later judgment, not decided here.
+10. Glossary
+Term
+Meaning
+Category
+An admin-defined industry classification used to organize and browse videos.
+Origin (context)
+The category and/or video a contact-form or WhatsApp lead came from.
+Draft / Published
+A video's visibility state — only Published videos appear publicly.
+Secondary Service
+A follow-up offering (e.g. social publishing) listed separately from video production.
+Site Settings
+The single admin-editable record holding logo, social links, and WhatsApp templates.
+
