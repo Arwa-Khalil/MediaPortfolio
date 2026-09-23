@@ -225,11 +225,13 @@ if (app.Environment.IsDevelopment() && hangfireEnabled)
 
 if (hangfireEnabled)
 {
-    Hangfire.RecurringJob.AddOrUpdate<MediaPortfolio.Application.Interfaces.IContactRetentionService>(
+    using var scope = app.Services.CreateScope();
+    var recurringJobManager = scope.ServiceProvider.GetRequiredService<Hangfire.IRecurringJobManager>();
+    recurringJobManager.AddOrUpdate<MediaPortfolio.Application.Interfaces.IContactRetentionService>(
         "retention-30d",
         svc => svc.DeleteOldReadSubmissionsAsync(default),
-        Hangfire.Cron.Daily
-    );
+        Hangfire.Cron.Daily,
+        new Hangfire.RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 }
 
 app.Run();
